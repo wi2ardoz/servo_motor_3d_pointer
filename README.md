@@ -4,8 +4,7 @@
 
 Title:         Servo Motor 3D Pointer - TI MSP430xG461x                                                
 Date:          21.01.20                                                                                    
-Author:        Liad Oz                                                                                     
-               Gal Vaknin                                                                                  
+Author:        Liad Oz / Gal Vaknin                                                                                  
 Description:   This program uses 2 servo motors controlled by PWM signals done by TimerB clock.            
                2 PWM signals simultaneously - phi (TBCCR1) & theta (TBCCR2), with frequency (TBCCR0).        
                For more hardware info about dutycycle-angle relation check the final report.               
