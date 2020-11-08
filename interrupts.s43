@@ -1,0 +1,373 @@
+#include   <msp430xG46x.h>
+;=============================================================================================================
+           ; macro definitions
+           
+           ; delay
+delay      MACRO   time
+           local   L3      
+           mov.w   time,R15               
+L3         dec.w   R15                     
+           jnz     L3                                          
+           ENDM
+            
+           ; delay for pull up/down buttons
+Debounce   MACRO  cycles
+           LOCAL  L
+           mov.w  cycles,R15     
+L          dec.w  R15                     
+           jnz    L
+           ENDM
+           
+           ; divider macro
+div        MACRO   Divided,Divisor,Quotient,Remainder
+           LOCAL   L1,L2,L3
+           mov     #17,R9
+           clr     R10                                                          ; quotient register
+           mov.w   Divided,R14                                                  ; devided registers is R13,R14
+           clr     R13
+           mov.w   Divisor,R11                                                  ; divisor registers is R11       
+L3         rla     R10
+L1         dec     R9
+           jz      L2
+           rla     R14
+           rlc     R13
+           cmp     R11,R13
+           jlo     L3
+           sub     R11,R13
+           setc
+           rlc     R10
+           jmp     L1       
+L2         mov.w   R10,Quotient
+           mov.w   R13,Remainder     
+           ENDM 
+;=============================================================================================================      
+           MODULE  interrupts
+           EXTERN  LCD_Strobe,LCD_Cmd,LCD_Data,Print,Config                     ; LCD & config                     
+           EXTERN  ConBintoAng,ConBintoFreq                                     ; utility functions
+           EXTERN  str1,str2,str3,str4                                          ; strings            
+           EXTERN  PullUp,PullDown,PB_opt,KP_opt,flagPB0,potmode                ; var & flags
+           EXTERN  phi,theta,angle,quotient,a,b,c                               ; option 2 vars
+           EXTERN  xyz,flagK,flagxyz,str3_0,str3_1                              ; option 3 vars
+           EXTERN  freq,flagFixAngle,angle4,modeUpDown                          ; option 4 vars  
+           PUBLIC  PORT1_ISR,PORT2_ISR,ADC12_ISR,TIMERB_ISR                     ; public interrupts
+
+           RSEG    CODE
+;=============================================================================================================
+             ; PORT1 ISR - interrupts from the buttons 
+PORT1_ISR    Debounce     #PullUp		                                ; PB0 was pushed
+             bit.b   #0x40,&P1IFG                                               ; checking is PB2 pushed
+             jnz     PB2                                                        ; jump to PB2 if so
+             bit.b   #0x80,&P1IFG                                               ; checking is PB3 pushed
+             jnz     PB3                                                        ; jump to PB1 if so  
+             
+             delay   #3000
+             
+             ; check PB0 is back or confirm mode            
+             cmp     #0,flagPB0
+             jnz     PB0
+             
+             ; Push button 0 (back button)            
+             bic     #CPUOFF,0(SP)                                              ; Exit LMP0
+             bis.b   #0xc0,&P1IE                                                ; P1.6-7 interrupts (PB2,3) enable
+             bic.b   #0x10,&P1IE                                                ; P1.4 -PB0 interrupts disable
+             bis.b   #0x02,&P2IE                                                ; enable keypad  interrupts
+             clr.b   &P10OUT
+             
+             ; check if user is in option 1 => skip timers and servo update 
+             cmp     #0,KP_opt
+             jz      skipTimer             
+             
+             ; reset servo for 0 state
+             mov     #819,&TBCCR0                                               ; set 40hz 
+             mov     #18,&TBCCR1                                                ; move phi to 0 degree
+             mov     #49,&TBCCR2                                                ; move theta to 0 degree
+             delay   #50000                                                     ; wait untill servo moves to 0 state    
+             delay   #50000
+             delay   #50000
+             mov     #MC_0,&TBCTL                                               ; disable PWM signal
+
+skipTimer    
+             ; reset flags
+             mov     #0,flagK                                                   ; reset keypad mode
+             mov     #0,flagxyz                                                 ; reset xyz counter
+             mov     #0,flagFixAngle                                            ; reset fixed angle option
+             mov     #0,KP_opt                                                  ; reset keypad option
+             mov     #1,PB_opt                                                  ; reset push button option
+             bic.b   #0xff,&P1IFG                                               ; reset of interrupt flag             
+             reti
+             
+             ; Push button 0 (confirm button)
+PB0          cmp     #4,KP_opt                                                  ; check which option you are in 2 or 4   
+             jz      Freq
+             cmp     #2,flagPB0                                                 ; check if its your first or second input
+             jnz     Theta 
+             
+             ; option 2 - 3D Pointer (phi,theta)
+Phi          mov     R12,phi                                                    ; first (button) input - push R12 (ready angle) to phi
+             delay   #3000
+             dec     flagPB0                                                    ; decrement input flag (after this line should be 1)
+             jmp     exitLPM0                                                   ; wake up clock. in this stage ADC12 is still on!
+Theta        mov     R12,theta                                                  ; second (button) input - push R12 (ready angle) to theta  
+             ; disable ADC12 moudle
+             bic     #ENC,&ADC12CTL0                                            
+             bic     #ADC12ON,&ADC12CTL0 
+             dec     flagPB0                                                    ; decrement input flag (after this line should be 0)
+             jmp     exitLPM0                                                   ; wake up clock. in this stage ADC12 is off
+             
+             ; option 4 - Scanner
+Freq         cmp     #2,flagPB0                                                 ; check if its your first or second input
+             jnz     Angle 
+             mov     R12,freq                                                   ; first input - push R12 (ready frequancy) to freq 
+             ; disable ADC12 moudle
+             bic     #ENC,&ADC12CTL0
+             bic     #ADC12ON,&ADC12CTL0
+             delay   #3000
+             dec     flagPB0                                                    ; decrement input flag (after this line should be 1)
+             jmp     exitLPM0
+Angle        mov     R12,angle4                                                 ; second (button) input - push R12 (ready angle) to angle   
+             ; disable ADC12
+             bic     #ENC,&ADC12CTL0
+             bic     #ADC12ON,&ADC12CTL0             
+             dec     flagPB0                                                    ; decrement input flag (after this line should be 0)
+             jmp     exitLPM0
+            
+             ; Push button 2
+             ; check if arrived to top of menu
+PB2          cmp     #5,PB_opt
+             jz      fifth
+             inc     PB_opt
+             jmp     exitLPM0
+fifth        mov     #1,PB_opt
+             jmp     exitLPM0
+             
+             ; Push button 3
+             ; check if arrived to bottom of menu
+PB3          cmp     #1,PB_opt
+             jz      zero
+             dec     PB_opt
+             jmp     exitLPM0
+zero         mov     #5,PB_opt
+             jmp     exitLPM0
+                          
+exitLPM0     bic     #CPUOFF,0(SP)                                              ; Exit LMP0
+             delay   #65535         
+             delay   #40000      		                                ; little delay for adjustments
+             bic.b   #0xff,&P1IFG                                               ; reset of interrupt flag
+fin          reti
+;-------------------------------------------------------------------------------------------------------------
+             ; PORT2 ISR - interrupts from the keypad  
+PORT2_ISR    Debounce #PullUp                                                   ; delay the transition effect
+             mov.b   &P10IN,R4                                                  ; connect to the key pad
+             
+             
+             ; check keypad mode 
+             ; 0 => inputs from menu option , 1 => inputs from option 2, 3 or 4
+             cmp    #1,flagK
+             jz     KeyPadInput
+             
+             ; check which key pressed
+             mov.b  #0x07,&P10OUT ; check row 1
+             bit.b  #0x80,P10IN   ;(1)
+             jz     KeyPad1
+             bit.b  #0x40,P10IN   ;(2)
+             jz     KeyPad2
+             bit.b  #0x20,P10IN   ;(3)
+             jz     KeyPad3
+             bit.b  #0x10,P10IN   ;(A)
+             jz     KeyPadERROR
+             
+             MOV.B  #0x0B,&P10OUT ; check row 2
+             BIT.B  #0x80,P10IN   ;(4)
+             JZ     KeyPad4
+             BIT.B  #0x40,P10IN   ;(5)
+             JZ     KeyPad5
+             jmp    KeyPadERROR   ; else error
+             
+             ; inputs for option 1 'menu'
+             
+             ; kepad 1 is pressed           
+KeyPad1      delay  #1748
+             mov    #1,KP_opt
+             bic.b  #0x02,&P2IE	                                                ; disable kepad interrupts
+             bis.b  #0x10,&P1IE                                                 ; enable PB0 interrupt
+             mov    #1,PB_opt                                                   ; reset menu position
+             jmp    Exit
+             
+             ; keypad 2 is pressed 
+KeyPad2      delay  #1748
+             mov    #2,KP_opt
+             bic.b  #0x02,&P2IE                                                 ; disable kepad interrupts
+             bis.b  #0x10,&P1IE                                                 ; enable PB0 interrupt
+             mov    #1,PB_opt	                                                ; reset menu position
+             jmp    Exit
+             
+             ; keypad 3 is pressed
+KeyPad3      delay  #1748
+	     mov    #3,KP_opt
+             bic.b  #0x02,&P2IE                                                 ; disable kepad interrupts  
+             bis.b  #0x10,&P1IE                                                 ; enable PB0 interrupt
+             mov    #1,PB_opt                                                   ; reset menu position
+             jmp    Exit  
+             
+             ; kepad 4 is pressed 
+KeyPad4      delay  #1748 
+             mov    #4,KP_opt                                                    
+             bic.b  #0x02,&P2IE                                                 ; disable kepad interrupts
+             bis.b  #0x10,&P1IE                                                 ; enable PB0 interrupt
+             mov    #1,PB_opt                                                   ; reset menu position
+             jmp    Exit
+             
+             ; kepad 5 is pressed
+KeyPad5      mov    #5,KP_opt
+             bic.b  #0x02,&P2IE                                                 ; disable kepad interrupts
+             bis.b  #0x10,&P1IE                                                 ; enable PB0 interrupt
+             mov    #1,PB_opt                                                   ; reset menu position
+             jmp    Exit
+             
+             ; inputs for option 3 'vector' or 4 'scanner'
+KeyPadInput   
+             dec    flagxyz                                                     ; decrement input counter for option 3 (vectors)                                                       
+
+             ; check which key pressed
+             mov.b  #0x07,&P10OUT ;CHEACK ROW1
+             bit.b  #0x80,P10IN   ;(1)
+             jz     Button1
+             bit.b  #0x40,P10IN   ;(2)
+             jz     Button2
+             mov.b  #0x0e,&P10OUT ;CHEACK ROW4
+             bit.b  #0x40,P10IN   ;(0)
+             jz     Button0
+             jmp    KeyPadERROR   ; else error
+             
+             ; keypad 2 is pressed
+Button2      cmp    #4,KP_opt                                                   ; check which option you are in 3 or 4
+             jz     mission42
+             jmp    Exit
+mission42    mov    #1,flagFixAngle                                             ; theta angle selected
+             jmp    Exit
+             
+             ; keypad 1 is pressed
+Button1      cmp    #4,KP_opt                                                   ; check which option you are in 3 or 4
+             jz     mission41
+mission31    add    #1,xyz                                                      ; push 1 to xyz int                                                     
+             rla    xyz                                                         ; rotate it left
+             mov    #str3_1,R6                                                  ; print '1' on LCD                                                      
+             call   #Print
+             jmp    Exit
+mission41    mov    #0,flagFixAngle                                             ; phi angle selected 
+             jmp    Exit
+             
+             ; keypad 0 is pressed  
+Button0      rla    xyz                                                         ; rotate xyz left (push zero)
+             mov    #str3_0,R6                                                  ; print '0' on LCD
+             call   #Print
+             jmp    Exit
+
+             ; wrong kepadpressed do noting
+KeyPadERROR  clr.b  &P10OUT 			                                
+
+            
+Exit         bic    #CPUOFF,0(SP)                                               ; Exit LMP0
+             bic.b  #0x02,&P2IFG		                                ; disableinq flag
+             bic.b  #0xff,&P1IFG             
+             delay  #3000 
+             
+             reti          
+;-------------------------------------------------------------------------------------------------------------          
+             ; TIMER_B ISR
+TIMERB_ISR        
+             ; check which angle is fixed
+             cmp   #0,flagFixAngle
+             jz    phiFixed
+             
+             ; timer B non-fixed angles config                                     
+             ; check if index arrived to max angle
+             ; if max value - set direction to down (modeUpDown will be 0)
+             ; else if min value - set direction to up (modeUpDown will be 1)
+             ; else - continue in your current direction 
+
+thetaFixed      
+             ;  duty of non-fixed phi
+             cmp   #102,angle4                                                  
+             jz    mode0P                                                       
+             cmp   #4,angle4                                                    
+             jz    mode1P                                                       
+             jmp   continueP            
+mode0P       mov   #0,modeUpDown                                                ; direction set to down
+             jmp   continueP             
+mode1P       mov   #1,modeUpDown                                                ; direction set to up
+             jmp   continueP
+continueP    cmp   #0,modeUpDown                                                ; check your current state - up or down                                   
+             jz    downP
+             add   #7,angle4                                                    ; add jumps of #7
+             jmp   continue2P 
+downP        sub   #7,angle4                                                    ; substruct jumps of #7
+continue2P   mov   angle4,&TBCCR1                                               ; update TBCCR1    
+             jmp   Fin
+             
+phiFixed
+             ;  duty of fixed phi
+             cmp   #76,angle4                           
+             jz    mode0T            
+             cmp   #49,angle4
+             jz    mode1T
+             jmp   continueT            
+mode0T       mov   #0,modeUpDown                                                ; direction set to down
+             jmp   continueT          
+mode1T       mov   #1,modeUpDown                                                ; direction set to up
+             jmp   continueT
+continueT    cmp   #0,modeUpDown                                                ; check your current state - up or down 
+             jz    downT  
+             add   #3,angle4                                                    ; add jumps of #3
+             jmp   continue2T
+downT        sub   #3,angle4                                                    ; substruct jumps of #3
+continue2T   mov   angle4,&TBCCR2                                               ; update TBCCR2       
+             jmp   Fin  
+             
+Fin          bic   #CCIFG,&TBCCTL3                                              ; disable IFG flag 
+             bic   #TBIFG,&TBCTL		
+                   
+             reti 
+;-------------------------------------------------------------------------------------------------------------          
+             ; ADC12 ISR
+ADC12_ISR    mov   &ADC12MEM3,R12                                               ; move sample to R12 
+             bic   #0x0008,ADC12IE                                              ; mask ADC12 
+             bis   #GIE,SR                                                      ; enable global inturrapts
+             
+             cmp   #0,potmode
+             jnz   potmode1
+             
+potmode0     call  #ConBintoAng                                                 ; angle inside R12
+             jmp   atoi   
+potmode1     call  #ConBintoFreq                                                ; freq inside R12             
+             
+atoi         ; this function convert 3 digits int to string
+             div   R12,#10,quotient,c
+             div   quotient,#10,a,b            
+             add   #48,a
+             add   #48,b
+             add.b #48,c            
+             rla   b
+             rla   b
+             rla   b
+             rla   b
+             rla   b
+             rla   b
+             rla   b
+             rla   b            
+             add   b,a
+             mov   #angle,R10                                                   
+             mov   a,0(R10)
+             incd  R10
+             mov   c,0(R10)                          
+             
+             ; print to LCD
+             mov  #angle,R6  
+             call #Print             
+                         
+             bis  #0x0008,ADC12IE                                               ; turn on ADC12 inturrapts
+             reti
+;-------------------------------------------------------------------------------------------------------------
+;=============================================================================================================
+            ENDMOD
+            END

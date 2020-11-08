@@ -1,0 +1,177 @@
+#include    <msp430xG46x.h>
+;=============================================================================================================
+           ; macro definitions
+           
+           ; delay
+delay      MACRO   time                                                           
+           local   L3      
+           mov.w   time,R15               
+L3         dec.w   R15                     
+           jnz     L3                                          
+           ENDM
+           
+           ; divider macro
+div        MACRO   Divided,Divisor,Quotient,Remainder
+           LOCAL   L1,L2,L3
+           mov     #17,R9
+           clr     R10                                                          ; quotient register
+           mov.w   Divided,R14                                                  ; devided registers is R13,R14
+           clr     R13
+           mov.w   Divisor,R11                                                  ; divisor registers is R11             
+L3         rla     R10
+L1         dec     R9
+           jz      L2
+           rla     R14
+           rlc     R13
+           cmp     R11,R13
+           jlo     L3
+           sub     R11,R13
+           setc
+           rlc     R10
+           jmp     L1               
+L2         mov.w   R10,Quotient
+           mov.w   R13,Remainder               
+           ENDM 
+;=============================================================================================================
+           MODULE    Functions  
+           EXTERN    temp,sum,quotient,remainder                                ; calculation vars
+           PUBLIC    LCD_Strobe,LCD_Cmd,LCD_Data,Print,Config                   ; LCD & config
+           PUBLIC    ConBintoAng,ConBintoFreq                                   ; utility functions
+
+           RSEG       CODE
+;-------------------------------------------------------------------------------------------------------------
+           ; config and setup                    
+Config    
+           ; port 1
+           bic.b   #0xf0,&P1SEL                                                 ; P1.4-5 i/o mode
+           bic.b   #0xf0,&P1DIR                                                 ; P1.4-5 as input 
+           bis.b   #0x10,&P1IES                                                 ; p1.5 fallin edge
+           bic.b   #0xc0,&P1IES                                                 ; p1.6-7 rising edge
+           bis.b   #0xc0,&P1IE                                                  ; P1.6-7 interrupts enable
+           bic.b   #0xf0,&P1IFG                                                 ; clear flags
+           
+           ; port 2       
+           bic.b   #0x02,&P2SEL                                                 ; P2.1 i/o mode            
+           bic.b   #0x02,&P2DIR                                                 ; P2.1 as input 
+           bis.b   #0x02,&P2IES                                                 ; p2.1 falling edge
+           bis.b   #0x02,&P2IE                                                  ; P2.1 interrupt enable
+           bic.b   #0x02,&P2IFG                                                 ; clear flag
+           bis.b   #0x04,&P2SEL                                                 ; P2.2 PWM mode            
+           bis.b   #0x04,&P2DIR                                                 ;
+           bis.b   #0x08,&P2SEL                                                 ; P2.3 PWM mode            
+           bis.b   #0x08,&P2DIR                                                 ;                  
+            
+           ; port 3
+           bic.b  #0xe0,&P3SEL                                                  ; P3.5-7 i/o mode
+           bis.b  #0xe0,&P3DIR                                                  ; P3.5-7 as output 
+                               
+           ; port 4
+           bic.b  #0xff,&P4SEL                                                  ; P4.0-7 i/o mode 
+           bis.b  #0x0f,&P4DIR                                                  ; P4.0-3 as output
+           
+           ; port 5
+           bic.b  #0xff,&P5SEL                                                  ; P5.0-7 i/o mode 
+           bis.b  #0xff,&P5DIR                                                  ; P5.0-7 as output 
+           clr.b  &P4OUT
+        
+           ; port 9 & port  10
+           bic     #0xffff,&PBSEL                                               ; P9.0-7 & P10.0-7 i/o mode
+           bis     #0xffff,&PBDIR                                               ; P9.0-7 & P10.0-7 as output
+           bic.b   #0xff,&P10SEL                                                ; P10.0-7 i/o mode 
+           bis.b   #0x0f,&P10DIR                                                ; P10.0-3 as output 
+           bic.b   #0xf0,&P10DIR                                                ; P10.4-7 as input 
+           clr.b   &P10OUT                                                      ; keypad sets for interrupts
+           clr     &PBOUT
+           
+           ; setup of adc12
+           mov.w   #ADC12ON+MSC+SHT0_12,&ADC12CTL0 	                        ; sampling time, MSC on, ADC12 on, 1204 sample timer
+           mov.w   #SHP+CONSEQ_2+CSTARTADD_3+ADC12SSEL_1,&ADC12CTL1             ; sample timer on, channel A3, ACLK 2^15 
+           mov.b   #INCH_3,&ADC12MCTL3                                          ; analog input is A3, VR+=3.3v  VR-=0v
+           mov.w   #0x08,&ADC12IE           	                                ; enable interrupt
+           bis.w   #ENC,&ADC12CTL0         
+           bis.b   #0x08,&P6SEL
+	
+           ; setup of lcd
+SetupLCD   
+           bic.b   #0xe0,&P3OUT				
+           delay   #5243                                                        ;delay of 15msec using Macro
+           mov.b   #0x3F,&P5OUT
+           call    #LCD_Strobe  
+           delay   #1748                                                        ;delay of 5msec using Macro
+           mov.b   #0x3F,&P5OUT
+           call    #LCD_Strobe  
+           delay   #70                                                          ;delay of 200usec using Macro
+           mov.b   #0x3F,&P5OUT
+           call    #LCD_Strobe
+           mov.b   #0x3c,R4
+           call    #LCD_Cmd
+           mov.b   #0x0f,R4
+           call    #LCD_Cmd
+           mov.b   #0x01,R4
+           call    #LCD_Cmd
+           mov.b   #0x06,R4
+           call    #LCD_Cmd
+           mov.b   #0x80,R4
+           call    #LCD_Cmd
+           mov.b   #0x02,R4
+           call    #LCD_Cmd
+           mov.b   #0x0c,R4
+           call    #LCD_Cmd    
+           ret
+             
+;-------------------------------------------------------------------------------------------------------------
+             ; utility functions                           
+ConBintoAng  mov     R12,temp
+             div     temp,#21,quotient,remainder
+             mov     quotient,R12       
+             ret
+             
+ConBintoFreq mov     R12,temp
+             div     temp,#252,quotient,remainder                               ; y=(15/3778)x + 5 ~  y=(1/252)x + 5
+             add     #5,quotient
+             mov     quotient,R12       
+             ret
+;-------------------------------------------------------------------------------------------------------------
+             ; LCD functions                                           
+LCD_Strobe   bis.b   #BIT7,&P3OUT                                               ; sets E=1
+             nop                               
+             nop                               
+             bic.b   #BIT7,&P3OUT                                               ; sets E=0 
+             ret
+             
+LCD_Cmd      delay   #1748                                                      ; delay of 5 msec 
+             mov.b   R4,&P5OUT                                                  ; moves R4 to the LCD screen
+             call    #LCD_Strobe               
+             ret
+
+LCD_Data     delay   #1748                                                      ; delay of 5 msec 
+             mov.b   #0,&P5OUT                                                  ; sets 0 into P5out
+             bis.b   #0x20,&P3OUT                                               ; sets RS=1
+             mov.b   R4,&P5OUT                                                  ; moves chars ASCII code to output
+             call    #LCD_Strobe               
+             bic.b   #0x20,&P3OUT                                               ; sets RS=0
+             ret
+             
+             ; str print routine contains string              
+Print        mov     #17,R8                                                     ; moves sub-matrices from row +1 into R8
+             mov     #1,R4                                                      ; moving the number of rows -1 to R4
+             call    #LCD_Cmd                                                   ; calling LCD_Cmd routine
+loop1        dec     R8                                                         ; in each loop we decreasing R8
+             jz      n_row                                                      ; checking if R8 is zero, if yes we jump to print a new row
+             mov     R7,R15                                                     ; releasing the register R7 for use in this routine
+             mov.b   @R6,R7                                                     ; R6 points to the beginning of the string to print printed
+             cmp     #0,R7                                                      ; checking if its the end of the sting \0                           
+             jz      stop                                                       ; if yes jump to stop
+             mov     R15,R7                                                     ; else, taking back what was in R7 because the LCD routine use R15 in delay Macro                                      
+             mov.b   @R6+,R4                                                    ; transferring the char into R4 to get print on the LCD
+             call    #LCD_Data                                                  ; calling LCD_Strobe routine
+             jmp     loop1                                                      ; check if R8 is zero or the string end
+n_row        mov     #0xc0,R4                                                   ; new row, moving the cursor to the new row                  
+             call    #LCD_Cmd                                                   ; calling LCD_Cmd routine
+             jmp     loop1                                                      ; go to check if or the string end
+stop         mov     R15,R7                                                     ; taking back what was in R7
+             ret              
+;-------------------------------------------------------------------------------------------------------------
+;=============================================================================================================
+             ENDMOD  
+             END
