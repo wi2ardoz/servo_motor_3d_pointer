@@ -1,5 +1,5 @@
 # Servo-Motor-3D-Pointer-MSP430xG461x-
-# Physical pointer pointing on spatial position by sampling of the sutiable frequencies (theta,phi) done by ADC12 clock of the TexasInstrument microcontroller.
+# Physical pointer pointing on spatial position by sampling sutiable frequencies (theta,phi) done by ADC12 clock of the TexasInstrument microcontroller.
 
 
 Title:         Servo Motor 3D Pointer - TI MSP430xG461x                                                
