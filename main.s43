@@ -15,7 +15,7 @@
 ;#                    In this option PWM frequency is 40 Hz.                                                  #;  
 ;#                (3) 3D pointer (x,y,z) -  servo stick will move to spatial position according to elementary #;   
 ;#                    vectors. Inputs are via keypad. In this function there are 7 inputs possible:           #;  
-;#                    (0,0,1) => (phi 0,theta 90) , (0,1,0) => (phi 90,theta 0) ,                             #;                                                            #;
+;#                    (0,0,1) => (phi 0,theta 90) , (0,1,0) => (phi 90,theta 0) ,                             #;                                                            
 ;#                    (0,1,1) => (phi 90,theta 45) , (1,0,0) => (phi 0,theta 0) ,                             #;                                                           
 ;#                    (1,0,1) => (phi 0,theta 45) , (1,1,0) => (phi 45,theta 0) ,                             #;
 ;#                    (1,1,1) => (phi 45,theta 45)                                                            #;
