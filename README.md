@@ -6,10 +6,6 @@ This program uses 2 servo motors controlled by PWM signals done by TimerB clock.
 2 PWM signals simultaneously - phi (TBCCR1) & theta (TBCCR2), with frequency (TBCCR0).        
 For more hardware info about dutycycle-angle ratio check the final report.
 
-## HW
-
-TI MSP430FG4619
-
 ## Functionality
 
 1. Instruction - show on LCD general info about the project.              
@@ -27,7 +23,11 @@ TI MSP430FG4619
     servo stick will move to the chosen fixed angle and in the other angle will scan area   
     according to it spatial range (from min to max) repeatedly with 100msec delay.          
     Sampling of angle and frequency is by potentiometer (0v-3v) done by ADC12 clock.        
-5. Quit - go to sleep and wait for wake from push button PB0.                              
+5. Quit - go to sleep and wait for wake from push button PB0.
+
+## HW
+
+TI MSP430FG4619                          
 
 ## Size
 
