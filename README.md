@@ -5,7 +5,8 @@ Date:          21.01.20
 Author:        Liad Oz / Gal Vaknin                                                                                  
 Description:   This program uses 2 servo motors controlled by PWM signals done by TimerB clock.            
                2 PWM signals simultaneously - phi (TBCCR1) & theta (TBCCR2), with frequency (TBCCR0).        
-               For more hardware info about dutycycle-angle ratio check the final report.               
+               For more hardware info about dutycycle-angle ratio check the final report.
+               
                Main menu:                                                                                  
                   (1) Instruction - show on LCD general info about the project.              
                   (2) 3D pointer (phi,theta) - servo stick will move to spatial position according to phi and 
