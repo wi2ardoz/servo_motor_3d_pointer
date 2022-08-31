@@ -1,4 +1,4 @@
-# Servo-Motor-3D-Pointer-MSP430xG461x-
+# Servo Motor 3D Pointer 
 
 Title:         Servo Motor 3D Pointer - TI MSP430xG461x                                                
 Date:          21.01.20                                                                                    
